@@ -1,11 +1,12 @@
 import pandas as pd
 import numpy as np
 from sklearn.linear_model import LinearRegression
+from opencage.geocoder import OpenCageGeocode
 
 
 
 class Client:
-    def __init__(self, client_id, local_data, local_labels):
+    def __init__(self, client_id, local_data, local_labels,address):
         """
         Initialize a client with local data and labels.
         :param client_id: Unique identifier for the client
@@ -17,7 +18,22 @@ class Client:
         self.local_labels = local_labels
         self.local_model = None  # Placeholder for the local LinearRegression model
         self.server_node_index = None  # Keeps track of the node in the server's DAG
+        self.latitude,self.longitude=self.get_lat_lon_from_address(address)
+        # self.latitude,self.longitude=21.145800,79.088158
 
+    def get_lat_lon_from_address(self,address):
+        key = "f2d92829a3534473a165ab81e923e190"
+        geocoder = OpenCageGeocode(key)
+        result = geocoder.geocode(address)
+        if result:
+            lat = result[0]['geometry']['lat']
+            lon = result[0]['geometry']['lng']
+            return lat, lon
+        else:
+            return None, None
+
+
+    
     def get_global_model(self, server, full_graph=False):
         """
         Retrieve the global model or the full DAG from the server.
@@ -58,7 +74,7 @@ class Client:
 
         if self.server_node_index is None:
             # First time: Add a new node with the client ID
-            self.server_node_index = server.add_node(local_update, metadata, client_id=self.client_id)
+            self.server_node_index = server.add_node(local_update, metadata, self)
         else:
             # Overwrite the existing node, retaining the client ID
             server.nodes[self.server_node_index] = {
