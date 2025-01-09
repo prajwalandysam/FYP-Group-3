@@ -118,7 +118,7 @@ class Server:
         """
         Update an edge in the DAG.
         :param parent_index: Index of the parent node
-        :param child_index: Index of the child node
+        :param child_index: Index of the child node 
         :param weight: Weight of the edge
         """
         print("printing the DAG before update_edge fn")
