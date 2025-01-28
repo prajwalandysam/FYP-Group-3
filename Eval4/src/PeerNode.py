@@ -18,7 +18,7 @@ class PeerNode:
         self.adj_matrix = [[0]]  # Global model is the first node (index 0)
         self.nodes = [{
             "node_id": 0,  # Global model node
-            "model": {"coef_": np.zeros(16).tolist(), "intercept_": 0.0},
+            "model": {"coef_": np.zeros(16).tolist(), "intercept_": 0.0}, #HARD CODED 16 FOR OUR PROJECT    
             "metadata": {"is_global": True, "timestamp": datetime.now()},
         }]
         
@@ -67,7 +67,7 @@ class PeerNode:
             row.append(0)  # Add a new column
         self.adj_matrix.append([0] * len(self.nodes))  # Add a new row
 
-        # Find parent nodes based on multi-criteria scoring
+        # Find parent nodes based on multi-criteria scoring (most imp)
         parent_scores = []
         for i, candidate_node in enumerate(self.nodes[:-1]):  # Exclude the new node itself
             score = self.calculate_score(new_node, candidate_node, criteria_weights)
