@@ -130,57 +130,102 @@ class Server:
         return recency_weight * recency_score + similarity_weight * similarity_score
     
     
-    def add_node(self, model_update, metadata, client):
+    # def add_node(self, model_update, metadata, client):
+    #     """
+    #     Add a new node to the local DAG based on multi-criteria dependencies.
+    #     :param model_update: Dictionary containing 'coef_' and 'intercept_' of the model.
+    #     :param metadata: Metadata for the new node (e.g., timestamp, client details).
+    #     :param criteria_weights: Weights for multi-criteria scoring (recency, similarity).
+    #     """
+        
+        
+    #     # Add a new node
+    # #         self.nodes.append({
+    # #             "model": model_update,
+    # #             "metadata": metadata,
+    # #             "client_id": client.client_id,
+    # #             "lat": client.latitude,
+    # #             "long": client.longitude
+    # #         })
+    # #         node_index = len(self.nodes) - 1
+    #     # Add the new node
+    #     new_node = {
+    #        "model": model_update,
+    #         "metadata": metadata,
+    #         "client_id": client.client_id,
+    #         "lat": client.latitude,
+    #         "long": client.longitude
+    #     }
+    #     self.nodes.append(new_node)
+
+    #     # Expand adjacency matrix for the new node
+    #     for row in self.adj_matrix:
+    #         row.append(0)  # Add a new column
+    #     self.adj_matrix.append([0] * len(self.nodes))  # Add a new row
+
+    #     # Find parent nodes based on multi-criteria scoring (most imp)
+    #     parent_scores = []
+    #     criteria_weights={"recency":0.5,"similarity":0.5} #hardcoded for now , same priority for recency and similarity
+    #     for i, candidate_node in enumerate(self.nodes[:-1]):  # Exclude the new node itself
+    #         score = self.calculate_score(new_node, candidate_node, criteria_weights)
+    #         parent_scores.append((i, score))
+
+    #     # Sort by score and select top parents
+    #     parent_scores = sorted(parent_scores, key=lambda x: x[1], reverse=True)
+    #     top_parents = [index for index, _ in parent_scores[:2]]  # Select top 2 parents
+    #     print(top_parents)
+
+    #     # Add edges to the DAG
+    #     new_node_index = len(self.nodes) - 1
+    #     for parent_index in top_parents:
+    #         self.adj_matrix[parent_index][new_node_index] = 1  # Parent -> Child
+   
+            
+    #     print("Adjacency Matrix after adding/updating node:")
+    #     self.print_dag()
+
+    #     return new_node_index
+    
+    def add_node(self, model_update, metadata, client, num_parents=2):
         """
-        Add a new node to the local DAG based on multi-criteria dependencies.
+        Add a new node to the DAG and randomly assign parent nodes.
+        
         :param model_update: Dictionary containing 'coef_' and 'intercept_' of the model.
         :param metadata: Metadata for the new node (e.g., timestamp, client details).
-        :param criteria_weights: Weights for multi-criteria scoring (recency, similarity).
+        :param client: Client object containing client_id, latitude, longitude.
+        :param num_parents: Number of random parent nodes to assign.
+        :return: Index of the added/updated node.
         """
         
-        
-        # Add a new node
-    #         self.nodes.append({
-    #             "model": model_update,
-    #             "metadata": metadata,
-    #             "client_id": client.client_id,
-    #             "lat": client.latitude,
-    #             "long": client.longitude
-    #         })
-    #         node_index = len(self.nodes) - 1
+
         # Add the new node
         new_node = {
-           "model": model_update,
+            "model": model_update,
             "metadata": metadata,
             "client_id": client.client_id,
             "lat": client.latitude,
             "long": client.longitude
         }
         self.nodes.append(new_node)
+        new_node_index = len(self.nodes) - 1
 
         # Expand adjacency matrix for the new node
         for row in self.adj_matrix:
             row.append(0)  # Add a new column
         self.adj_matrix.append([0] * len(self.nodes))  # Add a new row
 
-        # Find parent nodes based on multi-criteria scoring (most imp)
-        parent_scores = []
-        criteria_weights={"recency":0.5,"similarity":0.5} #hardcoded for now , same priority for recency and similarity
-        for i, candidate_node in enumerate(self.nodes[:-1]):  # Exclude the new node itself
-            score = self.calculate_score(new_node, candidate_node, criteria_weights)
-            parent_scores.append((i, score))
+        # Randomly pick parent nodes
+        if len(self.nodes) > 1:
+            parent_indices = random.sample(range(len(self.nodes) - 1), min(num_parents, len(self.nodes) - 1))
+        else:
+            parent_indices = []
 
-        # Sort by score and select top parents
-        parent_scores = sorted(parent_scores, key=lambda x: x[1], reverse=True)
-        top_parents = [index for index, _ in parent_scores[:2]]  # Select top 2 parents
-        print(top_parents)
+        print(f"Randomly selected parents for node {new_node_index}: {parent_indices}")
 
         # Add edges to the DAG
-        new_node_index = len(self.nodes) - 1
-        for parent_index in top_parents:
+        for parent_index in parent_indices:
             self.adj_matrix[parent_index][new_node_index] = 1  # Parent -> Child
-   
-            
+
         print("Adjacency Matrix after adding/updating node:")
         self.print_dag()
 
