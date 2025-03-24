@@ -1,8 +1,8 @@
-# Node2_main.py
+# Node3_main.py
 import sys
 sys.path.append("../src")
 from main import start_server
 
 if __name__ == "__main__":
-    print("Starting Node2 on port 8002...")
-    start_server(8002)
+    print("Starting Node3 on port 8003...")
+    start_server(8003)

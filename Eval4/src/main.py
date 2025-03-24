@@ -1,8 +1,16 @@
 
 import traceback
+import numpy as np
 from fastapi import FastAPI, Request
+from typing import List 
+import sys
+sys.path.append("../src")  # Add the parent directory to the module search path
+
+from pydantic import BaseModel
+# Now import from the parent directory
 from Client import Client
 from Server import Server
+from Client_task import client_task
 from asyncio import Lock
 import logging
 import uvicorn  # Import uvicorn to run the app
@@ -82,8 +90,18 @@ async def aggregate():
         except Exception as e:
             logging.error("Error during aggregation", exc_info=True)
             return {"error": str(e), "details": traceback.format_exc()}
+        
+        
 
+class SyncRequest(BaseModel):
+    urls: List[str]  # Ensure the request expects a JSON list
 
+@app.post("/sync-global-model")
+async def sync_global(request: SyncRequest):
+    response = server_obj.sync_global_model(request.urls)
+    return response
+    
+    
 @app.get("/print-dag")
 async def print_dag():
     """Endpoint to print the DAG."""
@@ -96,6 +114,30 @@ async def print_dag():
             logging.error("Error while printing DAG", exc_info=True)
             return {"error": str(e), "details": traceback.format_exc()}
         
+@app.get("/prune-graph")
+async def prune_graph():
+    """Endpoint to prune the graph."""
+    async with lock:
+        try:
+            logging.debug("pruning Graph.")
+            server_obj.prune_graph()
+            return {"message": "DAG pruned"}
+        except Exception as e:
+            logging.error("Error while pruning  DAG", exc_info=True)
+            return {"error": str(e), "details": traceback.format_exc()}  
+        
+@app.get("/plot-graph")
+async def plot_graph():
+    """Endpoint to plot the graph."""
+    async with lock:
+        try:
+            logging.debug("plotting Graph.")
+            server_obj.plot_graph()
+            return {"message": "DAG plotted"}
+        except Exception as e:
+            logging.error("Error while plotting  DAG", exc_info=True)
+            return {"error": str(e), "details": traceback.format_exc()}               
+        
 @app.get("/get-global-parameters")
 async def calculate_accuracy():
     async with lock:
@@ -103,13 +145,52 @@ async def calculate_accuracy():
             logging.debug("calculating accuracy")
             coeff=server_obj.global_model.coef_
             intercept=server_obj.global_model.intercept_
+            time=server_obj.timestamp
             coef_= server_obj.global_model.coef_.tolist() if hasattr(server_obj.global_model.coef_, "tolist") else server_obj.global_model.coef_,
             intercept_= server_obj.global_model.intercept_
-            return {"coef":coef_,"intercept_":intercept_}
+            return {"coef":coef_,"intercept_":intercept,"time":time}
         except Exception as e:
             logging.error("Error while caluating DAG", exc_info=True)
             return {"error": str(e), "details": traceback.format_exc()}
+@app.post("/trigger_sync")
+async def trigger_sync(request: Request):
+    """API to sync the global model across nodes."""
+    data = await request.json()
+    server_urls = data.get("server_urls", [])
+    
+    if not server_urls:
+        return {"error": "No server URLs provided for synchronization."}
+    
+    sync_result = server_obj.sync_global_model(server_urls)  # Ensure this matches the new function
+    return sync_result
+
+@app.post("/update_global_model")
+async def update_global_model(request: Request):
+    """Endpoint to update the server’s global model with a new version."""
+    async with lock:
+        try:
+            data = await request.json()
+            logging.debug(f"Received global model update: {data}")
+
+            # Extract model parameters
+            new_coeff = data["model"]["coef_"]
+            new_intercept = data["model"]["intercept_"]
+            timestamp = data["timestamp"]
+
+            # Update the server's global model
+            server_obj.global_model.coef_ = np.array(new_coeff)
+            server_obj.global_model.intercept_ = new_intercept
+
+            # Log update
+            logging.info(f"Global model updated successfully at {timestamp}")
+
+            return {"message": "Global model updated successfully", "timestamp": timestamp}
+
+        except Exception as e:
+            logging.error("Error while updating global model", exc_info=True)
+            return {"error": str(e), "details": traceback.format_exc()}
         
-#         # Run the FastAPI app on port 8001
-# if __name__ == "__main__":
-#     uvicorn.run(app, host="0.0.0.0", port=8001)
+        
+def start_server(port):
+    """Function to start FastAPI server on a given port."""
+    uvicorn.run(app, host="0.0.0.0", port=port)

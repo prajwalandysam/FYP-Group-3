@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 from sklearn.linear_model import LinearRegression
 from opencage.geocoder import OpenCageGeocode
+import requests
+import logging
 
 
 
@@ -83,3 +85,10 @@ class Client:
                 "metadata": metadata,
                 "client_id": self.client_id
             }
+    def trigger_sync(self, server_url, server_urls):
+            """Trigger synchronization on a specific server."""
+            try:
+                response = requests.post(f"{server_url}/trigger_sync", json={"server_urls": server_urls})
+                logging.info(f"Sync triggered on {server_url}, Response: {response.json()}")
+            except requests.exceptions.RequestException as e:
+                logging.error(f"Failed to trigger sync on {server_url}: {e}")      

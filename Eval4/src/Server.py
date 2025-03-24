@@ -1,8 +1,15 @@
-from datetime import datetime
+from datetime import datetime, timezone
+import logging
+import requests
+import random
 import pandas as pd
 import numpy as np
 from sklearn.linear_model import LinearRegression
 from math import radians,cos,sin,sqrt,atan2
+import networkx as nx
+import matplotlib.pyplot as plt
+import heapq
+from collections import deque
 
 def haversine(lat1, lon1, lat2, lon2):
     """Calculate the great-circle distance between two points on the Earth."""
@@ -26,165 +33,66 @@ class Server:
         
         # Initialize the DAG
         self.adj_matrix = [[0]]  # Start with only the global model (node 0)
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]  # Format timestamp to milliseconds
+        self.timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]  # Format timestamp to milliseconds
         self.nodes = [{"model": {"coef_": self.global_model.coef_.tolist(), 
                                  "intercept_": self.global_model.intercept_}, 
-                       "metadata": {"is_global": True,"timestamp":timestamp},
+                       "metadata": {"is_global": True,"timestamp":self.timestamp},
                        "client_id": None}]  # No client ID for the global model
 
-    # def add_node(self, model_update, metadata, client):
-    #     """
-    #     Add a new node to the DAG or update an existing one.
-    #     :param model_update: Dictionary containing 'coef_' and 'intercept_' of a model
-    #     :param metadata: Dictionary with additional node information
-    #     :param client: Client object containing ID, lat, long, etc.
-    #     :return: Index of the added/updated node
-    #     """
-    #     # Check if a node with the same client_id already exists
-    #     existing_node_index = None
-    #     for index, node in enumerate(self.nodes):
-    #         if node.get("client_id") == client.client_id:
-    #             existing_node_index = index
-    #             break
-
-    #     if existing_node_index is not None:
-    #         # Update the existing node with the latest data
-    #         self.nodes[existing_node_index]["lat"] = client.latitude
-    #         self.nodes[existing_node_index]["long"] = client.longitude
-    #         self.nodes[existing_node_index]["model"] = model_update
-    #         self.nodes[existing_node_index]["metadata"] = metadata
-    #         print(f"Updated node for client {client.client_id}")
-    #         node_index = existing_node_index
-    #     else:
-    #         # Add a new node
-    #         self.nodes.append({
-    #             "model": model_update,
-    #             "metadata": metadata,
-    #             "client_id": client.client_id,
-    #             "lat": client.latitude,
-    #             "long": client.longitude
-    #         })
-    #         node_index = len(self.nodes) - 1
-
-    #         # Expand adjacency matrix for the new node
-    #         for row in self.adj_matrix:
-    #             row.append(0)  # Add a new column to each row
-    #         self.adj_matrix.append([0] * len(self.nodes))  # Add a new row
-
-    #     # Connect the new/updated node to the global model (index 0)
-    #     self.adj_matrix[0][node_index] = 1
-
-    #     # Establish edges with relevant leaf nodes based on geographical proximity
-    #     for i, node in enumerate(self.nodes):
-    #         if i == node_index:
-    #             continue  # Skip self
-
-    #         lat1, lon1 = client.latitude, client.longitude
-    #         lat2, lon2 = node.get("lat"), node.get("long")
-
-    #         if lat1 is None or lon1 is None or lat2 is None or lon2 is None:
-    #             continue  # Skip if any node lacks location data
-
-    #         # Calculate geographical proximity
-    #         distance = haversine(lat1, lon1, lat2, lon2)
-    #         print(f"Distance between {client.client_id} and {node['client_id']} is {distance:.2f} km")
-
-    #         if distance <= 50:  # Check threshold
-    #             self.update_edge(node_index, i)
-    #             self.update_edge(i, node_index)
-
-    #     print("Adjacency Matrix after adding/updating node:")
-    #     self.print_dag()
-
-    #     return node_index
-    
-    def calculate_score(self, current_node, candidate_node, criteria_weights):
-        """
-        Calculate a score based on multi-criteria (recency, similarity, etc.).
-        :param current_node: Node where the score is being calculated.
-        :param candidate_node: Candidate node to consider as a parent.
-        :param criteria_weights: Dictionary with weights for recency and similarity.
-        :return: The computed score.
-        """
-        # Extract criteria weights
-        recency_weight = criteria_weights.get("recency", 0.5)
-        similarity_weight = criteria_weights.get("similarity", 0.5)
-
-        # Recency: Difference in timestamps (smaller is better)
-        # Convert timestamps from string to datetime
-        current_timestamp = datetime.strptime(current_node["metadata"]["timestamp"], "%Y-%m-%d %H:%M:%S.%f")
-        candidate_timestamp = datetime.strptime(candidate_node["metadata"]["timestamp"], "%Y-%m-%d %H:%M:%S.%f")
-
-        # Calculate the difference in seconds
-        recency_diff = (current_timestamp - candidate_timestamp).total_seconds()
-        # recency_diff = (current_node["metadata"]["timestamp"] - candidate_node["metadata"]["timestamp"]).total_seconds()
-        recency_score = max(0, 1 / (1 + recency_diff))
-
-        # Similarity: Euclidean distance between model coefficients (smaller is better)
-        current_coef = np.array(current_node["model"]["coef_"])
-        candidate_coef = np.array(candidate_node["model"]["coef_"])
-        similarity = np.linalg.norm(current_coef - candidate_coef)
-        similarity_score = max(0, 1 / (1 + similarity))
-
-        # Combine criteria scores
-        return recency_weight * recency_score + similarity_weight * similarity_score
     
     
-    # def add_node(self, model_update, metadata, client):
-    #     """
-    #     Add a new node to the local DAG based on multi-criteria dependencies.
-    #     :param model_update: Dictionary containing 'coef_' and 'intercept_' of the model.
-    #     :param metadata: Metadata for the new node (e.g., timestamp, client details).
-    #     :param criteria_weights: Weights for multi-criteria scoring (recency, similarity).
-    #     """
+    def sync_global_model(self, urls):
+        """Synchronize global model across nodes."""
+        
+        latest_coef_ = np.zeros(16)  # 16 features initialized to 0
+        latest_intercept_ = 0.0 # Intercept initialized to 0.0
+        latest_time = 0  # Latest timestamp to track newest model
+
+        if not hasattr(self, "global_model"):
+            logging.error("No global model found.")
+            return {"error": "No global model available."}
+
         
         
-    #     # Add a new node
-    # #         self.nodes.append({
-    # #             "model": model_update,
-    # #             "metadata": metadata,
-    # #             "client_id": client.client_id,
-    # #             "lat": client.latitude,
-    # #             "long": client.longitude
-    # #         })
-    # #         node_index = len(self.nodes) - 1
-    #     # Add the new node
-    #     new_node = {
-    #        "model": model_update,
-    #         "metadata": metadata,
-    #         "client_id": client.client_id,
-    #         "lat": client.latitude,
-    #         "long": client.longitude
-    #     }
-    #     self.nodes.append(new_node)
+       
 
-    #     # Expand adjacency matrix for the new node
-    #     for row in self.adj_matrix:
-    #         row.append(0)  # Add a new column
-    #     self.adj_matrix.append([0] * len(self.nodes))  # Add a new row
-
-    #     # Find parent nodes based on multi-criteria scoring (most imp)
-    #     parent_scores = []
-    #     criteria_weights={"recency":0.5,"similarity":0.5} #hardcoded for now , same priority for recency and similarity
-    #     for i, candidate_node in enumerate(self.nodes[:-1]):  # Exclude the new node itself
-    #         score = self.calculate_score(new_node, candidate_node, criteria_weights)
-    #         parent_scores.append((i, score))
-
-    #     # Sort by score and select top parents
-    #     parent_scores = sorted(parent_scores, key=lambda x: x[1], reverse=True)
-    #     top_parents = [index for index, _ in parent_scores[:2]]  # Select top 2 parents
-    #     print(top_parents)
-
-    #     # Add edges to the DAG
-    #     new_node_index = len(self.nodes) - 1
-    #     for parent_index in top_parents:
-    #         self.adj_matrix[parent_index][new_node_index] = 1  # Parent -> Child
-   
+        # for url in server_urls:
+        for url in urls:
+            try:
+                response = requests.get(f"{url}/get-global-parameters")
+                response.raise_for_status()  # Raise exception for HTTP errors (4xx, 5xx)
+                data = response.json()  # Parse response JSON
+                
+                if "time" in data and "coef" in data and "intercept_" in data:
+                    response_time = datetime.fromisoformat(data["time"])
+                    latest_time_obj = datetime.fromisoformat(latest_time) if latest_time else None
+                    
+                    if latest_time_obj is None or response_time > latest_time_obj:
+                        latest_time = data["time"]
+                        latest_coef_ = np.array(data["coef"])
+                        latest_intercept_ = data["intercept_"]
+                else:
+                    logging.warning(f"Invalid response format from {url}: {data}")
             
-    #     print("Adjacency Matrix after adding/updating node:")
-    #     self.print_dag()
+            except requests.exceptions.RequestException as e:
+                logging.error(f"Failed to sync with {url}: {e}")
+            except ValueError as e:
+                logging.error(f"Invalid JSON response from {url}: {e}")
 
-    #     return new_node_index
+        # Update the global model with the latest parameters
+        self.global_model.coef_ = latest_coef_
+        self.global_model.intercept_ = latest_intercept_
+        # Update the global model in the nodes list
+        self.nodes[0]["model"] = {"coef_": latest_coef_, "intercept_": latest_intercept_}
+
+        logging.info(f"Global model updated with latest parameters at {latest_time}")
+        self.print_dag()
+
+        return {"coef_": latest_coef_.tolist(), "intercept_": latest_intercept_, "latest_time": latest_time}
+
+    
+    
+    
     
     def add_node(self, model_update, metadata, client, num_parents=2):
         """
@@ -302,7 +210,85 @@ class Server:
 
         self.print_dag()
         return {"coef_": aggregated_coef, "intercept_": aggregated_intercept}
+    def plot_graph(self, removed_nodes=None, title="Graph Visualization"):
+        G = nx.DiGraph()
+        current_time = datetime.utcnow()
+        node_ages = {i: (current_time - datetime.strptime(self.nodes[i]['metadata']['timestamp'], "%Y-%m-%d %H:%M:%S.%f")).total_seconds()
+                     for i in range(len(self.nodes))}
+        
+        for i in range(len(self.nodes)):
+            color = 'red' if removed_nodes and i in removed_nodes else 'green'
+            G.add_node(i, age=node_ages[i], color=color)
+        
+        for i in range(len(self.adj_matrix)):
+            for j in range(len(self.adj_matrix[i])):
+                if self.adj_matrix[i][j] == 1:
+                    G.add_edge(i, j)
+        
+        plt.figure(figsize=(8, 6))
+        pos = nx.spring_layout(G)
+        colors = [G.nodes[node]['color'] for node in G.nodes]
+        
+        nx.draw(G, pos, with_labels=True, node_color=colors, node_size=700, edge_color='gray', font_size=10)
+        plt.title(title)
+        plt.show()
 
+    def prune_graph(self, prune_count=2):
+        print("DEBUG: Pruning Graph")
+        current_time = datetime.utcnow()
+        
+        # BFS Traversal to collect all nodes
+        queue = deque([0])  # Start BFS from the global node (Node 0)
+        visited = set([0])
+        node_heap = []  # Min heap for pruning candidates
+        
+        while queue:
+            node_idx = queue.popleft()
+            if node_idx != 0:  # Skip global node
+                timestamp = datetime.strptime(self.nodes[node_idx]['metadata']['timestamp'], "%Y-%m-%d %H:%M:%S.%f")
+                heapq.heappush(node_heap, (timestamp, node_idx))
+            
+            for child_idx in range(len(self.adj_matrix[node_idx])):
+                if self.adj_matrix[node_idx][child_idx] == 1 and child_idx not in visited:
+                    visited.add(child_idx)
+                    queue.append(child_idx)
+        
+        # Remove the two oldest nodes (skip if fewer available)
+        nodes_to_remove = []
+        while len(nodes_to_remove) < prune_count and node_heap:
+            _, node_idx = heapq.heappop(node_heap)
+            nodes_to_remove.append(node_idx)
+        
+        if not nodes_to_remove:
+            print("DEBUG: No nodes to prune.")
+            return []
+        
+        print(f"DEBUG: Pruning nodes {nodes_to_remove}")
+        
+        # Reconnect children of removed nodes to random remaining nodes
+        remaining_nodes = [i for i in range(len(self.nodes)) if i not in nodes_to_remove]
+        
+        for node_idx in nodes_to_remove:
+            children = [i for i in range(len(self.adj_matrix[node_idx])) if self.adj_matrix[node_idx][i] == 1]
+            if not remaining_nodes:
+                break  # No remaining nodes to reconnect to
+            
+            for child in children:
+                new_parent = random.choice(remaining_nodes)  # Random reassignment
+                self.adj_matrix[new_parent][child] = 1  # Connect new parent to child
+        
+        # Create new adjacency matrix and node list
+        index_map = {old_idx: new_idx for new_idx, old_idx in enumerate(remaining_nodes)}
+        new_adj_matrix = [[self.adj_matrix[i][j] for j in remaining_nodes] for i in remaining_nodes]
+        self.nodes = [self.nodes[i] for i in remaining_nodes]
+        self.adj_matrix = new_adj_matrix
+        
+        print("DEBUG: DAG after pruning")
+        self.print_dag()
+        
+        
+        
+        return nodes_to_remove
 
     def print_dag(self):
         """
@@ -314,7 +300,36 @@ class Server:
         print("\nNodes:")
         for i, node in enumerate(self.nodes):
             print(f"Node {i}: {node}")
-
+            
+            
+    # def plot_graph(adj_matrix, node_list, timestamps, removed_nodes=None, title="Graph Visualization"):
+    #     G = nx.DiGraph()
+        
+    #     # Convert timestamps to ages
+    #     current_time = datetime.utcnow()
+    #     node_ages = {node: (current_time - datetime.strptime(timestamps[node], "%Y-%m-%d %H:%M:%S.%f")).total_seconds()
+    #                 for node in node_list}
+        
+    #     # Add nodes with attributes
+    #     for i, node in enumerate(node_list):
+    #         color = 'red' if removed_nodes and node in removed_nodes else 'green'
+    #         G.add_node(node, age=node_ages[node], color=color)
+        
+    #     # Add edges based on adjacency matrix
+    #     for i in range(len(adj_matrix)):
+    #         for j in range(len(adj_matrix[i])):
+    #             if adj_matrix[i][j] == 1:
+    #                 G.add_edge(node_list[i], node_list[j])
+        
+    #     # Draw graph
+    #     plt.figure(figsize=(8, 6))
+    #     pos = nx.spring_layout(G)
+    #     colors = [G.nodes[node]['color'] for node in G.nodes]
+        
+    #     nx.draw(G, pos, with_labels=True, node_color=colors, node_size=700, edge_color='gray', font_size=10)
+    #     plt.title(title)
+    #     plt.show()
+    
     def to_dict(self):
         """
         Serialize the server state for debugging or client communication.
