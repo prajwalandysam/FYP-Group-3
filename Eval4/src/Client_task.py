@@ -11,6 +11,15 @@ def client_task(client, server_urls):
     :return: Tuple with client_id and Mean Squared Error (MSE)
     """
     try:
+        
+          # Step 6: Request the server to perform aggregation
+        agg_response = requests.get(f"{server_urls[0]}/aggregate")
+        print(f"aggregation done by url: {server_urls[0]}")
+        if agg_response.status_code == 200:
+            aggregated_model = agg_response.json()
+            print(f"Client {client.client_id} received aggregated model.")
+        else:
+            raise Exception(f"Failed to aggregate models. Status code: {agg_response.status_code}")
         # Step 1:  client fetches the global model from its server
         response = requests.get(f"{server_urls[0]}/get_global_model")
         if response.status_code == 200:
@@ -51,14 +60,7 @@ def client_task(client, server_urls):
             mse = mean_squared_error(client.local_labels, y_pred)
             print("mse is " + str(mse))
 
-            # Step 6: Request the server to perform aggregation
-            agg_response = requests.get(f"{url}/aggregate")
-            print(f"aggregation done by url: {url}")
-            if agg_response.status_code == 200:
-                aggregated_model = agg_response.json()
-                print(f"Client {client.client_id} received aggregated model.")
-            else:
-                raise Exception(f"Failed to aggregate models. Status code: {agg_response.status_code}")
+      
 
             # Return client ID and MSE
         return client.client_id, mse

@@ -97,16 +97,15 @@ class Server:
     def add_node(self, model_update, metadata, client, num_parents=2):
         """
         Add a new node to the DAG and randomly assign parent nodes.
-        
+
         :param model_update: Dictionary containing 'coef_' and 'intercept_' of the model.
         :param metadata: Metadata for the new node (e.g., timestamp, client details).
         :param client: Client object containing client_id, latitude, longitude.
         :param num_parents: Number of random parent nodes to assign.
         :return: Index of the added/updated node.
         """
-        
 
-        # Add the new node
+        # Add the new node (even if a node with the same client ID exists)
         new_node = {
             "model": model_update,
             "metadata": metadata,
@@ -180,14 +179,14 @@ class Server:
         print(len(self.nodes))
         print("printing the DAG before aggregate fn")
         self.print_dag()
-        connected_indices = [i for i in range(1, len(self.nodes)) if self.adj_matrix[0][i] == 1]
-        print("connected_indices: "+ str(connected_indices))
+        # connected_indices = [i for i in range(1, len(self.nodes)) if self.adj_matrix[0][i] == 1]
+        # print("connected_indices: "+ str(connected_indices))
         
         aggregated_coef = np.zeros_like(self.global_model.coef_)
         aggregated_intercept = 0.0
         total_weight = 0
         
-        for idx in connected_indices:
+        for idx in range(1,len(self.nodes)) :
             node = self.nodes[idx]
             model = node["model"]
             weight = node["metadata"].get("weight", 1)  # Default weight is 1 if not provided
